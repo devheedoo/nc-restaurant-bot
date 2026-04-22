@@ -36,6 +36,9 @@ if "session" not in st.session_state:
     )
 session = st.session_state["session"]
 
+if "agent" not in st.session_state:
+    st.session_state["agent"] = triage_agent
+
 
 async def paint_history():
     messages = await session.get_items()
@@ -94,7 +97,7 @@ async def run_agent(message):
 
         try:
             stream = Runner.run_streamed(
-                triage_agent,
+                st.session_state["agent"],
                 message,
                 session=session,
                 context=user_account_ctx,
@@ -105,6 +108,7 @@ async def run_agent(message):
                     if event.data.type == "response.output_text.delta":
                         response += event.data.delta
                         text_placeholder.write(response.replace("$", "\$"))
+            st.session_state["agent"] = stream.last_agent
         except InputGuardrailTripwireTriggered as e:
             text_placeholder.write(_input_guardrail_user_message(e))
         except OutputGuardrailTripwireTriggered as e:
@@ -129,4 +133,5 @@ with st.sidebar:
     reset = st.button("Reset memory")
     if reset:
         asyncio.run(session.clear_session())
+        st.session_state["agent"] = triage_agent
     st.write(asyncio.run(session.get_items()))

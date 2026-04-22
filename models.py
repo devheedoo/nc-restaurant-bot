@@ -22,3 +22,12 @@ class RestaurantOutputGuardRailOutput(BaseModel):
     is_unprofessional_or_discourteous: bool
     leaks_internal_information: bool
     reason: str
+
+
+class HandoffData(BaseModel):
+    """Structured payload passed when handing off from triage to a specialist."""
+
+    to_agent_name: str
+    issue_type: str
+    issue_description: str
+    reason: str

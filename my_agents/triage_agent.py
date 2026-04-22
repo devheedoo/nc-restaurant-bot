@@ -1,12 +1,17 @@
+import streamlit as st
 from agents import (
     Agent,
     RunContextWrapper,
     Runner,
     GuardrailFunctionOutput,
+    handoff,
     input_guardrail,
 )
+from agents.extensions import handoff_filters
+from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 
-from models import InputGuardRailOutput, UserAccountContext
+from models import HandoffData, InputGuardRailOutput, UserAccountContext
+from my_agents.complaints_agent import complaints_agent
 from output_guardrails import restaurant_output_guardrail
 
 
@@ -65,57 +70,55 @@ def dynamic_triage_agent_instructions(
     agent: Agent[UserAccountContext],
 ):
     return f"""
-    You are a customer support agent. You ONLY help customers with their questions about their User Account, Billing, Orders, or Technical Support.
-    You call customers by their name.
-    
-    The customer's name is {wrapper.context.name}.
-    The customer's email is {wrapper.context.email}.
-    The customer's tier is {wrapper.context.tier}.
-    
-    YOUR MAIN JOB: Classify the customer's issue and route them to the right specialist.
-    
-    ISSUE CLASSIFICATION GUIDE:
-    
-    🔧 TECHNICAL SUPPORT - Route here for:
-    - Product not working, errors, bugs
-    - App crashes, loading issues, performance problems
-    - Feature questions, how-to help
-    - Integration or setup problems
-    - "The app won't load", "Getting error message", "How do I..."
-    
-    💰 BILLING SUPPORT - Route here for:
-    - Payment issues, failed charges, refunds
-    - Subscription questions, plan changes, cancellations
-    - Invoice problems, billing disputes
-    - Credit card updates, payment method changes
-    - "I was charged twice", "Cancel my subscription", "Need a refund"
-    
-    📦 ORDER MANAGEMENT - Route here for:
-    - Order status, shipping, delivery questions
-    - Returns, exchanges, missing items
-    - Tracking numbers, delivery problems
-    - Product availability, reorders
-    - "Where's my order?", "Want to return this", "Wrong item shipped"
-    
-    👤 ACCOUNT MANAGEMENT - Route here for:
-    - Login problems, password resets, account access
-    - Profile updates, email changes, account settings
-    - Account security, two-factor authentication
-    - Account deletion, data export requests
-    - "Can't log in", "Forgot password", "Change my email"
-    
-    CLASSIFICATION PROCESS:
-    1. Listen to the customer's issue
-    2. Ask clarifying questions if the category isn't clear
-    3. Classify into ONE of the four categories above
-    4. Explain why you're routing them: "I'll connect you with our [category] specialist who can help with [specific issue]"
-    5. Route to the appropriate specialist agent
-    
-    SPECIAL HANDLING:
-    - Premium/Enterprise customers: Mention their priority status when routing
-    - Multiple issues: Handle the most urgent first, note others for follow-up
-    - Unclear issues: Ask 1-2 clarifying questions before routing
+    {RECOMMENDED_PROMPT_PREFIX}
+
+    당신은 레스토랑 고객 응대 트리아지(Triage)입니다. 항상 한국어로 응대합니다.
+    고객 이름: {wrapper.context.name}, 이메일: {wrapper.context.email}, 등급: {wrapper.context.tier}.
+
+    역할:
+    - 메뉴·영업시간·위치·예약·웨이팅·주문·포장 등 일반 문의에는 직접 정중하게 안내합니다.
+    - 음식 품질, 서비스, 직원 태도, 청결, 대기, 과금 불만 등 불만·불쾌 경험이 분명하면
+      먼저 짧게 사과한 뒤, 예시처럼 말하고 불만 전담(Complaints Agent)으로 handoff 합니다.
+      예: "정말 죄송합니다. 도움을 드릴 수 있는 담당자에게 연결해 드릴게요."
+
+    불만 handoff 기준 (해당 시 반드시 전담으로 연결):
+    - 음식이 맛없었다, 직원이 불친절했다, 기다림이 길었다 등 명확한 부정 경험
+    - 환불·할인·보상·매니저 요구
+    - 위생·안전·알레르기·식중독 의심 등 민감 이슈
+
+    handoff 시 HandoffData를 채웁니다:
+    - issue_type: 짧은 분류 (예: service_complaint, food_quality, billing_dispute)
+    - issue_description: 고객이 말한 내용 요약
+    - reason: 연결 사유 한 줄
+    - to_agent_name: "ComplaintsAgent"
+
+    일반 문의만 있고 불만이 아니면 handoff 하지 말고 직접 답합니다.
     """
+
+
+def handle_handoff(
+    wrapper: RunContextWrapper[UserAccountContext],
+    input_data: HandoffData,
+):
+    with st.sidebar:
+        st.write(
+            f"""
+**Handoff** → {input_data.to_agent_name}
+
+- **Reason:** {input_data.reason}
+- **Issue type:** {input_data.issue_type}
+- **Description:** {input_data.issue_description}
+"""
+        )
+
+
+def make_handoff(agent: Agent[UserAccountContext]):
+    return handoff(
+        agent=agent,
+        on_handoff=handle_handoff,
+        input_type=HandoffData,
+        input_filter=handoff_filters.remove_all_tools,
+    )
 
 
 triage_agent = Agent(
@@ -123,4 +126,5 @@ triage_agent = Agent(
     instructions=dynamic_triage_agent_instructions,
     input_guardrails=[restaurant_input_guardrail],
     output_guardrails=[restaurant_output_guardrail],
+    handoffs=[make_handoff(complaints_agent)],
 )
