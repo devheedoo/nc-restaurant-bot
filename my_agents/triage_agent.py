@@ -1,6 +1,62 @@
-from agents import Agent, RunContextWrapper
+from agents import (
+    Agent,
+    RunContextWrapper,
+    Runner,
+    GuardrailFunctionOutput,
+    input_guardrail,
+)
 
-from models import UserAccountContext
+from models import InputGuardRailOutput, UserAccountContext
+
+
+input_guardrail_agent = Agent(
+    name="Restaurant Input Guardrail",
+    instructions="""
+    You classify the user's latest message for a restaurant customer-chat assistant.
+
+    ALLOW (not a violation) — messages that are about:
+    - Menu, food, drinks, allergens, ingredients, specials
+    - Reservations, wait times, seating, hours, location, parking
+    - Orders (takeout/delivery/dine-in), payment at the restaurant, receipts
+    - Service issues, complaints, praise, staff behavior, cleanliness
+    - Policies (dress code, kids, pets), events, private dining
+    - Brief greetings or light small talk at the start of a conversation
+
+    Treat as OFF-TOPIC (is_off_topic=true) when the message is unrelated to the restaurant /
+    hospitality context, for example: general knowledge, philosophy, politics unrelated to
+    the venue, coding, homework, medical/legal advice, or other domains with no clear link
+    to this restaurant assistant.
+
+    Treat as INAPPROPRIATE LANGUAGE (contains_inappropriate_language=true) when the message
+    includes profanity used as insults, slurs, sexual harassment, hate, or threats — even if
+    the topic mentions food or the restaurant.
+
+    If unsure whether a message is on-topic, prefer is_off_topic=false when there is any
+    plausible restaurant or dining connection.
+
+    Set reason to a short internal explanation (English is fine).
+    """,
+    output_type=InputGuardRailOutput,
+)
+
+
+@input_guardrail
+async def restaurant_input_guardrail(
+    wrapper: RunContextWrapper[UserAccountContext],
+    agent: Agent[UserAccountContext],
+    input: str,
+):
+    result = await Runner.run(
+        input_guardrail_agent,
+        input,
+        context=wrapper.context,
+    )
+    out = result.final_output
+    triggered = out.is_off_topic or out.contains_inappropriate_language
+    return GuardrailFunctionOutput(
+        output_info=out,
+        tripwire_triggered=triggered,
+    )
 
 
 def dynamic_triage_agent_instructions(
@@ -64,4 +120,5 @@ def dynamic_triage_agent_instructions(
 triage_agent = Agent(
     name="Triage Agent",
     instructions=dynamic_triage_agent_instructions,
+    input_guardrails=[restaurant_input_guardrail],
 )
