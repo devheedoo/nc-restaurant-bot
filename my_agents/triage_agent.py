@@ -1,9 +1,9 @@
 import streamlit as st
 from agents import (
     Agent,
+    GuardrailFunctionOutput,
     RunContextWrapper,
     Runner,
-    GuardrailFunctionOutput,
     handoff,
     input_guardrail,
 )
@@ -14,33 +14,28 @@ from models import HandoffData, InputGuardRailOutput, UserAccountContext
 from my_agents.complaints_agent import complaints_agent
 from output_guardrails import restaurant_output_guardrail
 
-
 input_guardrail_agent = Agent(
     name="Restaurant Input Guardrail",
     instructions="""
-    You classify the user's latest message for a restaurant customer-chat assistant.
+    레스토랑 고객 채팅 어시스턴트에 들어온 사용자 메시지를 분류합니다.
 
-    ALLOW (not a violation) — messages that are about:
-    - Menu, food, drinks, allergens, ingredients, specials
-    - Reservations, wait times, seating, hours, location, parking
-    - Orders (takeout/delivery/dine-in), payment at the restaurant, receipts
-    - Service issues, complaints, praise, staff behavior, cleanliness
-    - Policies (dress code, kids, pets), events, private dining
-    - Brief greetings or light small talk at the start of a conversation
+    허용(위반 아님) — 다음에 해당하면 is_off_topic=false, contains_inappropriate_language=false 쪽으로 둡니다:
+    - 메뉴, 음식, 음료, 알레르기, 재료, 시즌·특선 메뉴
+    - 예약, 웨이팅, 좌석, 영업시간, 위치, 주차
+    - 주문(포장·배달·매장), 매장 결제, 영수증
+    - 서비스 불만·칭찬, 직원 태도, 청결
+    - 매장 규정(드레스코드, 어린이, 반려동물), 이벤트, 단체·프라이빗 다이닝
+    - 대화 시작 시 짧은 인사나 가벼운 스몰토크
 
-    Treat as OFF-TOPIC (is_off_topic=true) when the message is unrelated to the restaurant /
-    hospitality context, for example: general knowledge, philosophy, politics unrelated to
-    the venue, coding, homework, medical/legal advice, or other domains with no clear link
-    to this restaurant assistant.
+    주제 이탈(OFF-TOPIC): 레스토랑·외식 맥락과 무관하면 is_off_topic=true 로 둡니다. 예: 일반 상식·철학,
+    매장과 무관한 정치, 코딩, 숙제, 의료·법률 자문 등 이 어시스턴트와 연결하기 어려운 영역.
 
-    Treat as INAPPROPRIATE LANGUAGE (contains_inappropriate_language=true) when the message
-    includes profanity used as insults, slurs, sexual harassment, hate, or threats — even if
-    the topic mentions food or the restaurant.
+    부적절한 언어: 모욕·비속어, 혐오·차별, 성희롱, 위협 등이 있으면 contains_inappropriate_language=true 로 둡니다.
+    주제가 음식·레스토랑이어도 마찬가지입니다.
 
-    If unsure whether a message is on-topic, prefer is_off_topic=false when there is any
-    plausible restaurant or dining connection.
+    애매하면 레스토랑·다이닝과 조금이라도 연결될 수 있으면 is_off_topic=false 를 선호합니다.
 
-    Set reason to a short internal explanation (English is fine).
+    reason에는 내부용으로 짧은 판단 근거를 한국어로 적습니다.
     """,
     output_type=InputGuardRailOutput,
 )
