@@ -2,10 +2,19 @@ import asyncio
 
 import dotenv
 import streamlit as st
-from agents import InputGuardrailTripwireTriggered, Runner, SQLiteSession
+from agents import (
+    InputGuardrailTripwireTriggered,
+    OutputGuardrailTripwireTriggered,
+    Runner,
+    SQLiteSession,
+)
 from openai import OpenAI
 
-from models import InputGuardRailOutput, UserAccountContext
+from models import (
+    InputGuardRailOutput,
+    RestaurantOutputGuardRailOutput,
+    UserAccountContext,
+)
 from my_agents.triage_agent import triage_agent
 
 dotenv.load_dotenv()
@@ -56,6 +65,25 @@ def _input_guardrail_user_message(exc: InputGuardrailTripwireTriggered) -> str:
     )
 
 
+def _output_guardrail_user_message(exc: OutputGuardrailTripwireTriggered) -> str:
+    info = exc.guardrail_result.output.output_info
+    if isinstance(info, RestaurantOutputGuardRailOutput):
+        if info.leaks_internal_information:
+            return (
+                "죄송합니다. 안내 과정에서 문제가 있었습니다. "
+                "레스토랑 이용 문의로 다시 말씀해 주시면 정중하게 도와드릴게요."
+            )
+        if info.is_unprofessional_or_discourteous:
+            return (
+                "불편을 드려 죄송합니다. 더 정중하게 안내드리겠습니다. "
+                "문의 내용을 한 번 더 말씀해 주시겠어요?"
+            )
+    return (
+        "지금은 안내를 완료하기 어렵습니다. "
+        "잠시 후 다시 말씀해 주시거나 다른 표현으로 문의해 주세요."
+    )
+
+
 async def run_agent(message):
 
     with st.chat_message("ai"):
@@ -79,6 +107,8 @@ async def run_agent(message):
                         text_placeholder.write(response.replace("$", "\$"))
         except InputGuardrailTripwireTriggered as e:
             text_placeholder.write(_input_guardrail_user_message(e))
+        except OutputGuardrailTripwireTriggered as e:
+            text_placeholder.write(_output_guardrail_user_message(e))
 
 
 message = st.chat_input(

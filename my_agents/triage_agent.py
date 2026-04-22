@@ -7,6 +7,7 @@ from agents import (
 )
 
 from models import InputGuardRailOutput, UserAccountContext
+from output_guardrails import restaurant_output_guardrail
 
 
 input_guardrail_agent = Agent(
@@ -121,4 +122,5 @@ triage_agent = Agent(
     name="Triage Agent",
     instructions=dynamic_triage_agent_instructions,
     input_guardrails=[restaurant_input_guardrail],
+    output_guardrails=[restaurant_output_guardrail],
 )
