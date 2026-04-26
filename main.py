@@ -112,103 +112,123 @@ def _flush_stream_segment(committed_lines: list[str], segment_body: str) -> None
     committed_lines.append(segment_body)
 
 
+def _new_ai_message_placeholder():
+    with st.chat_message("ai"):
+        return st.empty()
+
+
 async def run_agent(message):
 
-    with st.chat_message("ai"):
-        text_placeholder = st.empty()
+    text_placeholder = _new_ai_message_placeholder()
 
-        st.session_state["text_placeholder"] = text_placeholder
+    st.session_state["text_placeholder"] = text_placeholder
 
-        try:
-            st.session_state.pop(HANDOFF_USER_MESSAGE_KEY, None)
-            st.session_state.pop(HANDOFF_TARGET_NAME_KEY, None)
+    try:
+        st.session_state.pop(HANDOFF_USER_MESSAGE_KEY, None)
+        st.session_state.pop(HANDOFF_TARGET_NAME_KEY, None)
 
-            stream = Runner.run_streamed(
-                st.session_state["agent"],
-                message,
-                session=session,
-                context=user_account_ctx,
-                max_turns=25,
-            )
+        stream = Runner.run_streamed(
+            st.session_state["agent"],
+            message,
+            session=session,
+            context=user_account_ctx,
+            max_turns=25,
+        )
 
-            committed_lines: list[str] = []
-            segment_body = ""
+        committed_lines: list[str] = []
+        segment_body = ""
+        needs_new_message = False
 
-            async for event in stream.stream_events():
-                if isinstance(event, AgentUpdatedStreamEvent):
-                    _flush_stream_segment(committed_lines, segment_body)
-                    segment_body = ""
-                elif (
-                    isinstance(event, RunItemStreamEvent)
-                    and event.name == "handoff_occured"
-                ):
-                    korean = (
-                        st.session_state.pop(HANDOFF_USER_MESSAGE_KEY, None)
-                        or "담당자에게 연결해 드릴게요"
-                    )
-                    target = st.session_state.pop(HANDOFF_TARGET_NAME_KEY, None)
-                    # handoff 직전에 본문이 전혀 없을 때(도구만 호출 등) 연결 멘트 보강
-                    if not segment_body.strip():
-                        committed_lines.append(korean)
-                    else:
-                        _flush_stream_segment(committed_lines, segment_body)
-                    segment_body = ""
-                    suffix = f"  ([{target}])" if target else ""
-                    committed_lines.append(f"Handoff: {korean}{suffix}")
+        async for event in stream.stream_events():
+            if isinstance(event, AgentUpdatedStreamEvent):
+                _flush_stream_segment(committed_lines, segment_body)
+                segment_body = ""
+                if committed_lines:
                     text_placeholder.write(
                         _escape_streamlit_markdown(_join_chat_blocks(committed_lines))
                     )
-                elif event.type == "raw_response_event":
-                    if event.data.type == "response.output_text.delta":
-                        segment_body += event.data.delta
-                        parts = list(committed_lines)
-                        if segment_body:
-                            parts.append(segment_body)
-                        text_placeholder.write(
-                            _escape_streamlit_markdown(_join_chat_blocks(parts))
-                        )
-            _flush_stream_segment(committed_lines, segment_body)
+                    committed_lines = []
+                    needs_new_message = True
+            elif (
+                isinstance(event, RunItemStreamEvent)
+                and event.name == "handoff_occured"
+            ):
+                korean = (
+                    st.session_state.pop(HANDOFF_USER_MESSAGE_KEY, None)
+                    or "담당자에게 연결해 드릴게요"
+                )
+                st.session_state.pop(HANDOFF_TARGET_NAME_KEY, None)
+                # Agent가 handoff tool만 호출한 경우 live 화면에도 연결 멘트를 남깁니다.
+                if not segment_body.strip() and not committed_lines:
+                    if needs_new_message:
+                        continue
+                    committed_lines.append(korean)
+                else:
+                    _flush_stream_segment(committed_lines, segment_body)
+                segment_body = ""
+                if committed_lines:
+                    text_placeholder.write(
+                        _escape_streamlit_markdown(_join_chat_blocks(committed_lines))
+                    )
+                committed_lines = []
+                needs_new_message = True
+            elif event.type == "raw_response_event":
+                if event.data.type == "response.output_text.delta":
+                    if needs_new_message:
+                        text_placeholder = _new_ai_message_placeholder()
+                        st.session_state["text_placeholder"] = text_placeholder
+                        needs_new_message = False
+
+                    segment_body += event.data.delta
+                    parts = list(committed_lines)
+                    if segment_body:
+                        parts.append(segment_body)
+                    text_placeholder.write(
+                        _escape_streamlit_markdown(_join_chat_blocks(parts))
+                    )
+        _flush_stream_segment(committed_lines, segment_body)
+        if committed_lines:
             text_placeholder.write(
                 _escape_streamlit_markdown(
                     _join_chat_blocks(committed_lines),
                 )
             )
-            st.session_state["agent"] = stream.last_agent
-        except InputGuardrailTripwireTriggered as e:
-            text_placeholder.write(
-                _escape_streamlit_markdown(
-                    _join_chat_blocks(
-                        [
-                            "Bot: [input guardrail 작동]",
-                            f"Bot: {_input_guardrail_user_message(e)}",
-                        ]
-                    )
+        st.session_state["agent"] = stream.last_agent
+    except InputGuardrailTripwireTriggered as e:
+        text_placeholder.write(
+            _escape_streamlit_markdown(
+                _join_chat_blocks(
+                    [
+                        "Bot: [input guardrail 작동]",
+                        f"Bot: {_input_guardrail_user_message(e)}",
+                    ]
                 )
             )
-        except OutputGuardrailTripwireTriggered as e:
-            text_placeholder.write(
-                _escape_streamlit_markdown(
-                    _join_chat_blocks(
-                        [
-                            "Bot: [output guardrail 작동]",
-                            f"Bot: {_output_guardrail_user_message(e)}",
-                        ]
-                    )
+        )
+    except OutputGuardrailTripwireTriggered as e:
+        text_placeholder.write(
+            _escape_streamlit_markdown(
+                _join_chat_blocks(
+                    [
+                        "Bot: [output guardrail 작동]",
+                        f"Bot: {_output_guardrail_user_message(e)}",
+                    ]
                 )
             )
-        except MaxTurnsExceeded as e:
-            text_placeholder.write(
-                _escape_streamlit_markdown(
-                    _join_chat_blocks(
-                        [
-                            "Bot: [처리 제한에 도달했습니다]",
-                            f"Bot: {e} "
-                            "— 대화를 잠시 정리한 뒤, 한 가지씩 짧게 다시 말씀해 주세요. "
-                            "필요하면 사이드바 **Reset memory**로 재시도할 수 있어요.",
-                        ]
-                    )
+        )
+    except MaxTurnsExceeded as e:
+        text_placeholder.write(
+            _escape_streamlit_markdown(
+                _join_chat_blocks(
+                    [
+                        "Bot: [처리 제한에 도달했습니다]",
+                        f"Bot: {e} "
+                        "— 대화를 잠시 정리한 뒤, 한 가지씩 짧게 다시 말씀해 주세요. "
+                        "필요하면 사이드바 **Reset memory**로 재시도할 수 있어요.",
+                    ]
                 )
             )
+        )
 
 
 message = st.chat_input(
