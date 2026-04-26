@@ -200,8 +200,8 @@ async def run_agent(message):
             _escape_streamlit_markdown(
                 _join_chat_blocks(
                     [
-                        "Bot: [input guardrail 작동]",
-                        f"Bot: {_input_guardrail_user_message(e)}",
+                        "요청하신 내용을 바로 처리하기는 어려워요. 레스토랑 관련 도움이 필요하시면 다시 질문해 주세요.",
+                        _input_guardrail_user_message(e),
                     ]
                 )
             )
@@ -211,21 +211,18 @@ async def run_agent(message):
             _escape_streamlit_markdown(
                 _join_chat_blocks(
                     [
-                        "Bot: [output guardrail 작동]",
-                        f"Bot: {_output_guardrail_user_message(e)}",
+                        "지금은 안내를 마무리해 드리기 어려워요. 레스토랑 관련 문의로 다시 질문해 주시면 도와드릴게요.",
+                        _output_guardrail_user_message(e),
                     ]
                 )
             )
         )
-    except MaxTurnsExceeded as e:
+    except MaxTurnsExceeded:
         text_placeholder.write(
             _escape_streamlit_markdown(
                 _join_chat_blocks(
                     [
-                        "Bot: [처리 제한에 도달했습니다]",
-                        f"Bot: {e} "
-                        "— 대화를 잠시 정리한 뒤, 한 가지씩 짧게 다시 말씀해 주세요. "
-                        "필요하면 사이드바 **Reset memory**로 재시도할 수 있어요.",
+                        "한 번의 대화에서 이어갈 수 있는 처리 단계 한도에 도달했어요.",
                     ]
                 )
             )
