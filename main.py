@@ -21,8 +21,9 @@ from models import (
 from my_agents.handoff_support import (
     HANDOFF_TARGET_NAME_KEY,
     HANDOFF_USER_MESSAGE_KEY,
+    reset_handoff_path,
 )
-from my_agents.wiring import triage_agent
+from my_agents.wiring import all_agents, triage_agent
 
 dotenv.load_dotenv()
 
@@ -122,10 +123,12 @@ async def run_agent(message):
     text_placeholder = _new_ai_message_placeholder()
 
     st.session_state["text_placeholder"] = text_placeholder
+    original_handoffs = [(agent, list(agent.handoffs)) for agent in all_agents]
 
     try:
         st.session_state.pop(HANDOFF_USER_MESSAGE_KEY, None)
         st.session_state.pop(HANDOFF_TARGET_NAME_KEY, None)
+        reset_handoff_path(st.session_state["agent"].name)
 
         stream = Runner.run_streamed(
             st.session_state["agent"],
@@ -229,6 +232,9 @@ async def run_agent(message):
                 )
             )
         )
+    finally:
+        for agent, handoffs in original_handoffs:
+            agent.handoffs = handoffs
 
 
 message = st.chat_input(

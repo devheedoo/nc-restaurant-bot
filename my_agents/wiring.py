@@ -31,3 +31,5 @@ triage_agent = Agent(
     output_guardrails=[restaurant_output_guardrail],
     handoffs=[make_handoff(m) for m in specialists],
 )
+
+all_agents: list[Agent[UserAccountContext]] = [triage_agent, *specialists]
