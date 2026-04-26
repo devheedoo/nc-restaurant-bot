@@ -72,7 +72,7 @@ def dynamic_triage_agent_instructions(
 
     전담 handoff(반드시 아래 순서):
     1) 먼저 고객에게 보이는 **자연어**로 연결을 안내합니다(도구만 호출하고 말이 없는 것은 금지).
-    2) 그다음 handoff(HandoffData)를 호출합니다.
+    2) 그다음 handoff(HandoffData)를 **같은 메시지에서 한 번만** 호출합니다. (`transfer_to_*` **연속·중복 호출 금지**)
     연결 멘트 예: "메뉴 담당에게 연결해 드릴게요", "예약 담당에게 연결해 드릴게요" 등
 
     to_agent_name 규칙(고를 때):
@@ -83,7 +83,7 @@ def dynamic_triage_agent_instructions(
 
     **Complaints** handoff(해당 시):
     1) 먼저 **사과**와 **연결 안내**를 자연어로 한 번 이상 출력
-    2) handoff(HandoffData)
+    2) handoff(HandoffData) **한 번만** (같은 메시지에서 transfer 반복 금지)
     예: "정말 죄송합니다. 도움을 드릴 수 있는 담당자에게 연결해 드릴게요."
 
     HandoffData 필드:

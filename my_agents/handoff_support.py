@@ -1,12 +1,16 @@
 import streamlit as st
 from agents import (
     Agent,
+    ModelSettings,
     RunContextWrapper,
     handoff,
 )
 from agents.extensions import handoff_filters
 
 from models import HandoffData, UserAccountContext
+
+# Prevents parallel `transfer_to_*` calls in one model response (avoids handoff spam / max_turns).
+NO_PARALLEL_TOOL_CALLS = ModelSettings(parallel_tool_calls=False)
 
 HANDOFF_USER_MESSAGE_KEY = "handoff_user_message"
 HANDOFF_TARGET_NAME_KEY = "handoff_target_name"

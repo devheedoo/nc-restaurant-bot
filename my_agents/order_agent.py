@@ -1,15 +1,20 @@
 from agents import Agent, RunContextWrapper
 
 from models import UserAccountContext
+from my_agents.handoff_support import NO_PARALLEL_TOOL_CALLS
 from output_guardrails import restaurant_output_guardrail
 
 _SPECIALIST_HANDOFF_RULES = """
+    [Loop 방지]
+    - **같은 사용자 메시지**에 대해 `transfer_to_*` handoff는 **최대 1번**만.
+    - 메뉴·채식·알레르기·재료·오늘의 추천은 **MenuAgent**로 보내 **한 번**으로 끝내세요(연속 transfer 금지). 주문 담당이 메뉴 설명을 **대행하지** 마세요.
+
     다른 담당이 더 적합한 주제로 바뀌면, **반드시** 이 순서를 지킵니다.
     1) 먼저 고객에게 보이는 **한국어**로 연결을 안내하는 멘트를 한 번 이상 출력합니다. (도구만 호출하고 말이 없는 것은 금지)
-    2) 그다음 handoff(HandoffData)를 호출합니다.
+    2) 그다음 handoff(HandoffData)를 **한 번만** 호출합니다.
 
     to_agent_name 선택:
-    - "MenuAgent": 메뉴, 재료, 알레르기, 채식 옵션
+    - "MenuAgent": 메뉴, 재료, 알레르기, 채식 옵션, 메뉴 **내용**
     - "ReservationAgent": 테이블 예약, 인원, 날짜
     - "ComplaintsAgent": 불만, 환불, 서비스 문제, 민감 이슈
 
@@ -41,6 +46,7 @@ def dynamic_order_agent_instructions(
 order_agent = Agent(
     name="OrderAgent",
     instructions=dynamic_order_agent_instructions,
+    model_settings=NO_PARALLEL_TOOL_CALLS,
     output_guardrails=[restaurant_output_guardrail],
     handoffs=[],
 )

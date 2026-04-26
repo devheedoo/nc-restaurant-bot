@@ -5,9 +5,10 @@ import streamlit as st
 from agents import (
     AgentUpdatedStreamEvent,
     InputGuardrailTripwireTriggered,
+    MaxTurnsExceeded,
     OutputGuardrailTripwireTriggered,
-    Runner,
     RunItemStreamEvent,
+    Runner,
     SQLiteSession,
 )
 from openai import OpenAI
@@ -44,6 +45,7 @@ session = st.session_state["session"]
 
 if "agent" not in st.session_state:
     st.session_state["agent"] = triage_agent
+
 
 def _label_for_agent_name(aname: str) -> str:
     if not aname:
@@ -149,6 +151,7 @@ async def run_agent(message):
                 message,
                 session=session,
                 context=user_account_ctx,
+                max_turns=25,
             )
 
             committed_lines: list[str] = []
@@ -161,17 +164,23 @@ async def run_agent(message):
                     segment_body = ""
                     aname = event.new_agent.name or ""
                     current_label = _label_for_agent_name(aname)
-                elif isinstance(event, RunItemStreamEvent) and event.name == "handoff_occured":
-                    korean = st.session_state.pop(
-                        HANDOFF_USER_MESSAGE_KEY, None
-                    ) or "담당자에게 연결해 드릴게요"
+                elif (
+                    isinstance(event, RunItemStreamEvent)
+                    and event.name == "handoff_occured"
+                ):
+                    korean = (
+                        st.session_state.pop(HANDOFF_USER_MESSAGE_KEY, None)
+                        or "담당자에게 연결해 드릴게요"
+                    )
                     target = st.session_state.pop(HANDOFF_TARGET_NAME_KEY, None)
                     # handoff 직전에 본문이 전혀 없을 때(도구만 호출 등) 연결 멘트 보강
                     if not segment_body.strip():
                         who = current_label or "Triage"
                         committed_lines.append(f"{who}: {korean}")
                     else:
-                        _flush_stream_segment(committed_lines, current_label, segment_body)
+                        _flush_stream_segment(
+                            committed_lines, current_label, segment_body
+                        )
                     segment_body = ""
                     current_label = None
                     suffix = f"  ([{target}])" if target else ""
@@ -215,6 +224,19 @@ async def run_agent(message):
                         [
                             "Bot: [output guardrail 작동]",
                             f"Bot: {_output_guardrail_user_message(e)}",
+                        ]
+                    )
+                )
+            )
+        except MaxTurnsExceeded as e:
+            text_placeholder.write(
+                _escape_streamlit_markdown(
+                    _join_chat_blocks(
+                        [
+                            "Bot: [처리 제한에 도달했습니다]",
+                            f"Bot: {e} "
+                            "— 대화를 잠시 정리한 뒤, 한 가지씩 짧게 다시 말씀해 주세요. "
+                            "필요하면 사이드바 **Reset memory**로 재시도할 수 있어요.",
                         ]
                     )
                 )

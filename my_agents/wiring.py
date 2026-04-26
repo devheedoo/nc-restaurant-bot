@@ -4,7 +4,7 @@ from agents import Agent
 
 from models import UserAccountContext
 from my_agents.complaints_agent import complaints_agent
-from my_agents.handoff_support import make_handoff
+from my_agents.handoff_support import NO_PARALLEL_TOOL_CALLS, make_handoff
 from my_agents.menu_agent import menu_agent
 from my_agents.order_agent import order_agent
 from my_agents.reservation_agent import reservation_agent
@@ -26,6 +26,7 @@ for a in specialists:
 triage_agent = Agent(
     name="Triage Agent",
     instructions=dynamic_triage_agent_instructions,
+    model_settings=NO_PARALLEL_TOOL_CALLS,
     input_guardrails=[restaurant_input_guardrail],
     output_guardrails=[restaurant_output_guardrail],
     handoffs=[make_handoff(m) for m in specialists],
