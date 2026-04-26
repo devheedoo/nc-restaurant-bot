@@ -17,7 +17,11 @@ from models import (
     RestaurantOutputGuardRailOutput,
     UserAccountContext,
 )
-from my_agents.triage_agent import triage_agent
+from my_agents.handoff_support import (
+    HANDOFF_TARGET_NAME_KEY,
+    HANDOFF_USER_MESSAGE_KEY,
+)
+from my_agents.wiring import triage_agent
 
 dotenv.load_dotenv()
 
@@ -41,8 +45,20 @@ session = st.session_state["session"]
 if "agent" not in st.session_state:
     st.session_state["agent"] = triage_agent
 
-# Triage 답변 → handoff 안내 → Complaints 답변 순으로 표시할 때 쓰는 고정 문구
-HANDOFF_CHAT_NOTICE = "[Complaints Agent로 handoff]"
+def _label_for_agent_name(aname: str) -> str:
+    if not aname:
+        return "Assistant"
+    if "Triage" in aname:
+        return "Triage"
+    if "Menu" in aname:
+        return "Menu"
+    if "Order" in aname:
+        return "Order"
+    if "Reservation" in aname:
+        return "Reservation"
+    if "Complaint" in aname:
+        return "Complaints"
+    return aname.replace(" Agent", "").split()[0]
 
 
 def _escape_streamlit_markdown(text: str) -> str:
@@ -125,6 +141,9 @@ async def run_agent(message):
         st.session_state["text_placeholder"] = text_placeholder
 
         try:
+            st.session_state.pop(HANDOFF_USER_MESSAGE_KEY, None)
+            st.session_state.pop(HANDOFF_TARGET_NAME_KEY, None)
+
             stream = Runner.run_streamed(
                 st.session_state["agent"],
                 message,
@@ -141,25 +160,22 @@ async def run_agent(message):
                     _flush_stream_segment(committed_lines, current_label, segment_body)
                     segment_body = ""
                     aname = event.new_agent.name or ""
-                    if "Complaint" in aname:
-                        current_label = "Complaints"
-                    elif aname:
-                        current_label = aname.replace(" Agent", "").split()[0]
-                    else:
-                        current_label = "Assistant"
+                    current_label = _label_for_agent_name(aname)
                 elif isinstance(event, RunItemStreamEvent) and event.name == "handoff_occured":
-                    # 모델이 handoff만 호출하고 트리아지 멘트를 스트리밍하지 않는 경우가 있어 보강
+                    korean = st.session_state.pop(
+                        HANDOFF_USER_MESSAGE_KEY, None
+                    ) or "담당자에게 연결해 드릴게요"
+                    target = st.session_state.pop(HANDOFF_TARGET_NAME_KEY, None)
+                    # handoff 직전에 본문이 전혀 없을 때(도구만 호출 등) 연결 멘트 보강
                     if not segment_body.strip():
-                        committed_lines.append(
-                            "Triage: 정말 죄송합니다. "
-                            "도움을 드릴 수 있는 담당자에게 연결해 드릴게요."
-                        )
+                        who = current_label or "Triage"
+                        committed_lines.append(f"{who}: {korean}")
                     else:
                         _flush_stream_segment(committed_lines, current_label, segment_body)
                     segment_body = ""
                     current_label = None
-                    # (1) Triage (2) handoff 안내 (3) Complaints — 가운데 줄을 답변에 명시
-                    committed_lines.append(f"Handoff: {HANDOFF_CHAT_NOTICE}")
+                    suffix = f"  ([{target}])" if target else ""
+                    committed_lines.append(f"Handoff: {korean}{suffix}")
                     text_placeholder.write(
                         _escape_streamlit_markdown(_join_chat_blocks(committed_lines))
                     )

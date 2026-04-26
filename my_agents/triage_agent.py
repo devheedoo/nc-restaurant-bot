@@ -1,18 +1,13 @@
-import streamlit as st
 from agents import (
     Agent,
     GuardrailFunctionOutput,
     RunContextWrapper,
     Runner,
-    handoff,
     input_guardrail,
 )
-from agents.extensions import handoff_filters
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 
-from models import HandoffData, InputGuardRailOutput, UserAccountContext
-from my_agents.complaints_agent import complaints_agent
-from output_guardrails import restaurant_output_guardrail
+from models import InputGuardRailOutput, UserAccountContext
 
 input_guardrail_agent = Agent(
     name="Restaurant Input Guardrail",
@@ -67,62 +62,36 @@ def dynamic_triage_agent_instructions(
     return f"""
     {RECOMMENDED_PROMPT_PREFIX}
 
-    당신은 레스토랑 고객 응대 트리아지(Triage)입니다. 항상 한국어로 응대합니다.
+    당신은 레스토랑 고객 응대 **트리아지(Triage)** 입니다. 항상 한국어로 응대합니다.
     고객 이름: {wrapper.context.name}, 이메일: {wrapper.context.email}, 등급: {wrapper.context.tier}.
 
     역할:
-    - 메뉴·영업시간·위치·예약·웨이팅·주문·포장 등 일반 문의에는 직접 정중하게 안내합니다.
-    - 음식 품질, 서비스, 직원 태도, 청결, 대기, 과금 불만 등 불만·불쾌 경험이 분명하면
-      불만 전담(Complaints Agent)으로 handoff 하되, **반드시 아래 순서를 지킵니다.**
-      1) 먼저 고객에게 보이는 **자연어 메시지**를 반드시 한 번 이상 출력해 사과하고 연결을 안내합니다.
-         (도구 호출만 하고 말을 하지 않는 것은 금지입니다.)
-      2) 그 다음에 handoff(HandoffData)를 호출합니다.
-      예시 문구: "정말 죄송합니다. 도움을 드릴 수 있는 담당자에게 연결해 드릴게요."
+    - **대부분의 주제 전환은 전담 Agent로 handoff** 합니다. 짧은 인사(가능할 때) 후 연결하세요.
+    - 아주 가벼운 **인사/환영**만 직접 응답해도 됩니다(길지 않게).
+    - **영업시간·찾아오는 길(대략)** 은 1~2문장으로 답해도 됩니다(모르면 매장 확인을 권장).
 
-    불만 handoff 기준 (해당 시 반드시 전담으로 연결):
-    - 음식이 맛없었다, 직원이 불친절했다, 기다림이 길었다 등 명확한 부정 경험
-    - 환불·할인·보상·매니저 요구
-    - 위생·안전·알레르기·식중독 의심 등 민감 이슈
+    전담 handoff(반드시 아래 순서):
+    1) 먼저 고객에게 보이는 **자연어**로 연결을 안내합니다(도구만 호출하고 말이 없는 것은 금지).
+    2) 그다음 handoff(HandoffData)를 호출합니다.
+    연결 멘트 예: "메뉴 담당에게 연결해 드릴게요", "예약 담당에게 연결해 드릴게요" 등
 
-    handoff 시 HandoffData를 채웁니다:
-    - issue_type: 짧은 분류 (예: service_complaint, food_quality, billing_dispute)
-    - issue_description: 고객이 말한 내용 요약
-    - reason: 연결 사유 한 줄
-    - to_agent_name: "ComplaintsAgent"
+    to_agent_name 규칙(고를 때):
+    - "MenuAgent": 메뉴, 음식, 음료, **재료**, **알레르기**, 채식, 시즌·특선, 추천
+    - "OrderAgent": **주문** 접수(포장·매장), 수량, 희망 **픽업/주문** 시간, 주문 **확인**
+    - "ReservationAgent": **테이블 예약**, 인원, 날짜/시간, 창가 등 좌석 선호
+    - "ComplaintsAgent": **불만**·서비스 문제, **환불·할인·보상**, **매니저 요청**, 민감한 안전/위생 이슈(식중독 의심 등)
 
-    일반 문의만 있고 불만이 아니면 handoff 하지 말고 직접 답합니다.
+    **Complaints** handoff(해당 시):
+    1) 먼저 **사과**와 **연결 안내**를 자연어로 한 번 이상 출력
+    2) handoff(HandoffData)
+    예: "정말 죄송합니다. 도움을 드릴 수 있는 담당자에게 연결해 드릴게요."
+
+    HandoffData 필드:
+    - issue_type: 짧은 분류(예: menu, order, reservation, service_complaint, billing_dispute, allergy)
+    - issue_description: 고객이 말한 내용/요구 요약
+    - reason: 내부용 연결 사유 한 줄
+    - to_agent_name: "MenuAgent" | "OrderAgent" | "ReservationAgent" | "ComplaintsAgent"
     """
 
 
-def handle_handoff(
-    wrapper: RunContextWrapper[UserAccountContext],
-    input_data: HandoffData,
-):
-    with st.sidebar:
-        st.write(
-            f"""
-**Handoff** → {input_data.to_agent_name}
-
-- **Reason:** {input_data.reason}
-- **Issue type:** {input_data.issue_type}
-- **Description:** {input_data.issue_description}
-"""
-        )
-
-
-def make_handoff(agent: Agent[UserAccountContext]):
-    return handoff(
-        agent=agent,
-        on_handoff=handle_handoff,
-        input_type=HandoffData,
-        input_filter=handoff_filters.remove_all_tools,
-    )
-
-
-triage_agent = Agent(
-    name="Triage Agent",
-    instructions=dynamic_triage_agent_instructions,
-    input_guardrails=[restaurant_input_guardrail],
-    output_guardrails=[restaurant_output_guardrail],
-    handoffs=[make_handoff(complaints_agent)],
-)
+# Final `triage_agent` with `handoffs` is built in my_agents.wiring after all specialists exist.

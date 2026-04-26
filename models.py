@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class UserAccountContext(BaseModel):
@@ -25,9 +25,18 @@ class RestaurantOutputGuardRailOutput(BaseModel):
 
 
 class HandoffData(BaseModel):
-    """Structured payload passed when handing off from triage to a specialist."""
+    """Structured payload for handoff between Triage and specialists (or specialist ↔ specialist)."""
 
-    to_agent_name: str
-    issue_type: str
-    issue_description: str
-    reason: str
+    to_agent_name: str = Field(
+        ...,
+        description='Target agent id, e.g. "MenuAgent", "OrderAgent", "ReservationAgent", "ComplaintsAgent".',
+    )
+    issue_type: str = Field(
+        ...,
+        description="Short request category, e.g. menu, order, reservation, or complaint subtypes.",
+    )
+    issue_description: str = Field(
+        ...,
+        description="User request / conversation context summary for the receiving agent.",
+    )
+    reason: str = Field(..., description="One-line handoff reason (internal / routing).")
