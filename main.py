@@ -128,10 +128,10 @@ async def run_agent(message):
     try:
         st.session_state.pop(HANDOFF_USER_MESSAGE_KEY, None)
         st.session_state.pop(HANDOFF_TARGET_NAME_KEY, None)
-        reset_handoff_path(st.session_state["agent"].name)
+        reset_handoff_path(triage_agent.name)
 
         stream = Runner.run_streamed(
-            st.session_state["agent"],
+            triage_agent,
             message,
             session=session,
             context=user_account_ctx,
@@ -196,7 +196,7 @@ async def run_agent(message):
                     _join_chat_blocks(committed_lines),
                 )
             )
-        st.session_state["agent"] = stream.last_agent
+        st.session_state["agent"] = triage_agent
     except InputGuardrailTripwireTriggered as e:
         text_placeholder.write(
             _escape_streamlit_markdown(
