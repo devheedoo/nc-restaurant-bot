@@ -122,7 +122,6 @@ async def run_agent(message):
 
     text_placeholder = _new_ai_message_placeholder()
 
-    st.session_state["text_placeholder"] = text_placeholder
     original_handoffs = [(agent, list(agent.handoffs)) for agent in all_agents]
 
     try:
@@ -179,7 +178,6 @@ async def run_agent(message):
                 if event.data.type == "response.output_text.delta":
                     if needs_new_message:
                         text_placeholder = _new_ai_message_placeholder()
-                        st.session_state["text_placeholder"] = text_placeholder
                         needs_new_message = False
 
                     segment_body += event.data.delta
@@ -242,9 +240,6 @@ message = st.chat_input(
 )
 
 if message:
-    if "text_placeholder" in st.session_state:
-        st.session_state["text_placeholder"].empty()
-
     if message:
         with st.chat_message("human"):
             st.write(_escape_streamlit_markdown(message))
