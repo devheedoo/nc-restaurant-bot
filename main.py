@@ -47,22 +47,6 @@ if "agent" not in st.session_state:
     st.session_state["agent"] = triage_agent
 
 
-def _label_for_agent_name(aname: str) -> str:
-    if not aname:
-        return "Assistant"
-    if "Triage" in aname:
-        return "Triage"
-    if "Menu" in aname:
-        return "Menu"
-    if "Order" in aname:
-        return "Order"
-    if "Reservation" in aname:
-        return "Reservation"
-    if "Complaint" in aname:
-        return "Complaints"
-    return aname.replace(" Agent", "").split()[0]
-
-
 def _escape_streamlit_markdown(text: str) -> str:
     return text.replace("$", "\\$")
 
@@ -78,7 +62,7 @@ async def paint_history():
         if "role" in message:
             with st.chat_message(message["role"]):
                 if message["role"] == "user":
-                    st.write(_escape_streamlit_markdown(f"User: {message['content']}"))
+                    st.write(_escape_streamlit_markdown(message["content"]))
                 else:
                     if message["type"] == "message":
                         st.write(
@@ -121,18 +105,11 @@ def _output_guardrail_user_message(exc: OutputGuardrailTripwireTriggered) -> str
     )
 
 
-def _flush_stream_segment(
-    committed_lines: list[str],
-    current_label: str | None,
-    segment_body: str,
-) -> None:
+def _flush_stream_segment(committed_lines: list[str], segment_body: str) -> None:
     text = segment_body.strip()
     if not text:
         return
-    if current_label:
-        committed_lines.append(f"{current_label}: {segment_body}")
-    else:
-        committed_lines.append(segment_body)
+    committed_lines.append(segment_body)
 
 
 async def run_agent(message):
@@ -155,15 +132,12 @@ async def run_agent(message):
             )
 
             committed_lines: list[str] = []
-            current_label: str | None = None
             segment_body = ""
 
             async for event in stream.stream_events():
                 if isinstance(event, AgentUpdatedStreamEvent):
-                    _flush_stream_segment(committed_lines, current_label, segment_body)
+                    _flush_stream_segment(committed_lines, segment_body)
                     segment_body = ""
-                    aname = event.new_agent.name or ""
-                    current_label = _label_for_agent_name(aname)
                 elif (
                     isinstance(event, RunItemStreamEvent)
                     and event.name == "handoff_occured"
@@ -175,14 +149,10 @@ async def run_agent(message):
                     target = st.session_state.pop(HANDOFF_TARGET_NAME_KEY, None)
                     # handoff 직전에 본문이 전혀 없을 때(도구만 호출 등) 연결 멘트 보강
                     if not segment_body.strip():
-                        who = current_label or "Triage"
-                        committed_lines.append(f"{who}: {korean}")
+                        committed_lines.append(korean)
                     else:
-                        _flush_stream_segment(
-                            committed_lines, current_label, segment_body
-                        )
+                        _flush_stream_segment(committed_lines, segment_body)
                     segment_body = ""
-                    current_label = None
                     suffix = f"  ([{target}])" if target else ""
                     committed_lines.append(f"Handoff: {korean}{suffix}")
                     text_placeholder.write(
@@ -192,14 +162,12 @@ async def run_agent(message):
                     if event.data.type == "response.output_text.delta":
                         segment_body += event.data.delta
                         parts = list(committed_lines)
-                        if current_label and segment_body:
-                            parts.append(f"{current_label}: {segment_body}")
-                        elif segment_body:
+                        if segment_body:
                             parts.append(segment_body)
                         text_placeholder.write(
                             _escape_streamlit_markdown(_join_chat_blocks(parts))
                         )
-            _flush_stream_segment(committed_lines, current_label, segment_body)
+            _flush_stream_segment(committed_lines, segment_body)
             text_placeholder.write(
                 _escape_streamlit_markdown(
                     _join_chat_blocks(committed_lines),
@@ -253,7 +221,7 @@ if message:
 
     if message:
         with st.chat_message("human"):
-            st.write(_escape_streamlit_markdown(f"User: {message}"))
+            st.write(_escape_streamlit_markdown(message))
         asyncio.run(run_agent(message))
 
 
