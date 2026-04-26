@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 
 import dotenv
 import streamlit as st
@@ -55,6 +56,24 @@ def _escape_streamlit_markdown(text: str) -> str:
 def _join_chat_blocks(parts: list[str]) -> str:
     """Streamlit st.write는 Markdown이라 단일 \\n은 줄바꿈이 아니라 공백처럼 붙습니다."""
     return "\n\n".join(p for p in parts if p)
+
+
+def _assistant_session_message(text: str) -> dict:
+    """Runner가 세션에 남기는 assistant message와 동일한 형태( paint_history 호환 )."""
+    return {
+        "id": f"msg_local_{uuid.uuid4().hex}",
+        "role": "assistant",
+        "type": "message",
+        "status": "completed",
+        "content": [
+            {
+                "type": "output_text",
+                "text": text,
+                "annotations": [],
+                "logprobs": [],
+            }
+        ],
+    }
 
 
 async def paint_history():
@@ -196,27 +215,23 @@ async def run_agent(message):
             )
         st.session_state["agent"] = triage_agent
     except InputGuardrailTripwireTriggered as e:
-        text_placeholder.write(
-            _escape_streamlit_markdown(
-                _join_chat_blocks(
-                    [
-                        "요청하신 내용을 바로 처리하기는 어려워요. 레스토랑 관련 도움이 필요하시면 다시 질문해 주세요.",
-                        _input_guardrail_user_message(e),
-                    ]
-                )
-            )
+        reply = _join_chat_blocks(
+            [
+                "요청하신 내용을 바로 처리하기는 어려워요. 레스토랑 관련 도움이 필요하시면 다시 질문해 주세요.",
+                _input_guardrail_user_message(e),
+            ]
         )
+        text_placeholder.write(_escape_streamlit_markdown(reply))
+        await session.add_items([_assistant_session_message(reply)])
     except OutputGuardrailTripwireTriggered as e:
-        text_placeholder.write(
-            _escape_streamlit_markdown(
-                _join_chat_blocks(
-                    [
-                        "지금은 안내를 마무리해 드리기 어려워요. 레스토랑 관련 문의로 다시 질문해 주시면 도와드릴게요.",
-                        _output_guardrail_user_message(e),
-                    ]
-                )
-            )
+        reply = _join_chat_blocks(
+            [
+                "지금은 안내를 마무리해 드리기 어려워요. 레스토랑 관련 문의로 다시 질문해 주시면 도와드릴게요.",
+                _output_guardrail_user_message(e),
+            ]
         )
+        text_placeholder.write(_escape_streamlit_markdown(reply))
+        await session.add_items([_assistant_session_message(reply)])
     except MaxTurnsExceeded:
         text_placeholder.write(
             _escape_streamlit_markdown(
